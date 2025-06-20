@@ -6,11 +6,10 @@ function loadConfig() {
         return [
             'ssid' => 'default_wifi',
             'password' => 'default_password',
-            'static_ip' => '192.168.1.100',
+            'static_ip' => '192.168.1.18',
             'gateway' => '192.168.1.1',
             'dns' => '8.8.8.8',
-            'check_interval' => 30,
-            'min_battery' => 20,
+            'check_interval' => 60,
             'max_temp' => 80000,
             'power_mode' => 'normal',
             'active_days' => [1, 1, 1, 1, 1, 1, 1],
@@ -31,8 +30,36 @@ function saveConfig($config) {
 }
 
 function restartDaemon() {
-    exec('systemctl restart wifi_daemon 2>&1', $output, $return_code);
+    exec('sudo systemctl restart wifi_daemon 2>&1', $output, $return_code);
     return $return_code === 0;
+}
+
+function getSystemStats() {
+    $stats = ['temperature' => 'N/A', 'uptime' => 'N/A', 'load' => 'N/A'];
+    
+    // Temperatura del CPU
+    if (file_exists('/sys/class/thermal/thermal_zone0/temp')) {
+        $temp = file_get_contents('/sys/class/thermal/thermal_zone0/temp');
+        $stats['temperature'] = round($temp / 1000, 1) . '°C';
+    }
+    
+    // Uptime del sistema
+    if (file_exists('/proc/uptime')) {
+        $uptime = explode(' ', file_get_contents('/proc/uptime'));
+        $seconds = intval($uptime[0]);
+        $days = floor($seconds / 86400);
+        $hours = floor(($seconds % 86400) / 3600);
+        $minutes = floor(($seconds % 3600) / 60);
+        $stats['uptime'] = "{$days}d {$hours}h {$minutes}m";
+    }
+    
+    // Load average
+    if (file_exists('/proc/loadavg')) {
+        $load = explode(' ', file_get_contents('/proc/loadavg'));
+        $stats['load'] = $load[0] . ' ' . $load[1] . ' ' . $load[2];
+    }
+    
+    return $stats;
 }
 
 $config = loadConfig();
@@ -99,7 +126,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
             case 'update_system':
                 $config['check_interval'] = intval($_POST['check_interval']);
-                $config['min_battery'] = intval($_POST['min_battery']);
                 $config['max_temp'] = intval($_POST['max_temp']);
                 if (saveConfig($config)) {
                     $message = 'System settings updated successfully';
@@ -113,16 +139,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+$stats = getSystemStats();
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WiFi Daemon Control Panel</title>
+    <title>WiFi Daemon Control Panel - Server</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
-        .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
         .section h3 { margin-top: 0; color: #333; }
         .form-group { margin: 10px 0; }
@@ -137,12 +164,17 @@ $days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Satu
         .checkbox-item input { width: auto; margin-right: 5px; }
         .status { padding: 10px; background-color: #e9ecef; border-radius: 4px; margin: 10px 0; }
         .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-        @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+        .stat-card { background: #f8f9fa; padding: 15px; border-radius: 5px; text-align: center; }
+        .stat-value { font-size: 1.5em; font-weight: bold; color: #007cba; }
+        .stat-label { color: #666; margin-top: 5px; }
+        .server-badge { background: #28a745; color: white; padding: 5px 10px; border-radius: 15px; font-size: 0.8em; display: inline-block; margin-left: 10px; }
+        @media (max-width: 600px) { .grid, .stats-grid { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>WiFi Daemon Control Panel</h1>
+        <h1>WiFi Daemon Control Panel <span class="server-badge">SERVER</span></h1>
         
         <?php if ($message): ?>
             <div class="message"><?php echo htmlspecialchars($message); ?></div>
@@ -152,8 +184,30 @@ $days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Satu
             <div class="error"><?php echo htmlspecialchars($error); ?></div>
         <?php endif; ?>
         
+        <div class="section">
+            <h3>System Status</h3>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value"><?php echo $stats['temperature']; ?></div>
+                    <div class="stat-label">CPU Temperature</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value"><?php echo $stats['uptime']; ?></div>
+                    <div class="stat-label">System Uptime</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value"><?php echo $stats['load']; ?></div>
+                    <div class="stat-label">Load Average</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value"><?php echo htmlspecialchars($config['power_mode']); ?></div>
+                    <div class="stat-label">Power Mode</div>
+                </div>
+            </div>
+        </div>
+        
         <div class="status">
-            <h3>Current Status</h3>
+            <h3>Daemon Status</h3>
             <p><strong>Power Mode:</strong> <?php echo htmlspecialchars($config['power_mode']); ?></p>
             <p><strong>Disabled Until:</strong> 
                 <?php 
@@ -165,6 +219,7 @@ $days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Satu
                 ?>
             </p>
             <p><strong>Active Hours:</strong> <?php echo $config['start_hour']; ?>:00 - <?php echo $config['end_hour']; ?>:59</p>
+            <p><strong>Check Interval:</strong> <?php echo $config['check_interval']; ?> seconds</p>
         </div>
         
         <div class="grid">
@@ -176,8 +231,8 @@ $days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Satu
                         <label for="power_mode">Power Mode:</label>
                         <select name="power_mode" id="power_mode">
                             <option value="normal" <?php echo $config['power_mode'] === 'normal' ? 'selected' : ''; ?>>Normal</option>
-                            <option value="eco" <?php echo $config['power_mode'] === 'eco' ? 'selected' : ''; ?>>Eco</option>
-                            <option value="aggressive" <?php echo $config['power_mode'] === 'aggressive' ? 'selected' : ''; ?>>Aggressive</option>
+                            <option value="eco" <?php echo $config['power_mode'] === 'eco' ? 'selected' : ''; ?>>Eco (2x interval)</option>
+                            <option value="aggressive" <?php echo $config['power_mode'] === 'aggressive' ? 'selected' : ''; ?>>Aggressive (0.5x interval)</option>
                         </select>
                     </div>
                     <button type="submit">Update Power Mode</button>
@@ -267,12 +322,9 @@ $days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Satu
                         <input type="number" name="check_interval" id="check_interval" min="5" max="300" value="<?php echo $config['check_interval']; ?>">
                     </div>
                     <div class="form-group">
-                        <label for="min_battery">Minimum Battery (%):</label>
-                        <input type="number" name="min_battery" id="min_battery" min="0" max="100" value="<?php echo $config['min_battery']; ?>">
-                    </div>
-                    <div class="form-group">
                         <label for="max_temp">Maximum Temperature (milli°C):</label>
                         <input type="number" name="max_temp" id="max_temp" min="0" max="100000" value="<?php echo $config['max_temp']; ?>">
+                        <small>Current: <?php echo $stats['temperature']; ?></small>
                     </div>
                 </div>
                 <button type="submit">Update System Settings</button>

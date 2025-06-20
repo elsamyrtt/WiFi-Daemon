@@ -96,7 +96,7 @@ int load_config() {
     free(buffer);
     
     if (!root) {
-        syslog(LOG_ERROR, "Invalid JSON in config file");
+        syslog(LOG_ERR, "Invalid JSON in config file");
         load_default_config();
         return -1;
     }
@@ -131,7 +131,8 @@ int load_config() {
 
     json_object *days;
     if (json_object_object_get_ex(root, "active_days", &days)) {
-        for (int i = 0; i < 7 && i < json_object_array_length(days); i++) {
+        int array_length = json_object_array_length(days);
+        for (int i = 0; i < 7 && i < array_length; i++) {
             json_object *day = json_object_array_get_idx(days, i);
             config.active_days[i] = json_object_get_int(day);
         }
@@ -221,7 +222,7 @@ void reconnect_wifi() {
     result = system(command);
     
     if (result != 0) {
-        syslog(LOG_ERROR, "Failed to connect to WiFi");
+        syslog(LOG_ERR, "Failed to connect to WiFi");
         state.reconnect_attempts++;
         return;
     }
